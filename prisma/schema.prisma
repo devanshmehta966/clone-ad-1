@@ -1,0 +1,284 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  password      String?   // For credential auth
+  image         String?
+  role          Role      @default(CLIENT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  profile      Profile?
+
+  // NextAuth relations
+  accounts Account[]
+  sessions Session[]
+
+  @@index([email])
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// NextAuth required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Profile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  fullName        String?
+  email           String?
+  avatarUrl       String?
+  businessName    String?
+  businessEmail   String?
+  businessPhone   String?
+  businessWebsite String?
+  subscriptionPlan String?
+  // Webhook alerts configuration
+  webhookProvider String?  // 'slack' | 'generic' | 'email'
+  webhookUrl      String?
+  
+  // Notification preferences
+  emailAlerts     Boolean  @default(true)
+  weeklyReports   Boolean  @default(true)
+  budgetAlerts    Boolean  @default(true)
+  performanceAlerts Boolean @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Client {
+  id               String       @id @default(cuid())
+  userId           String       // References user in customer database
+  businessName     String
+  businessEmail    String?
+  businessPhone    String?
+  businessWebsite  String?
+  industry         String?
+  status           ClientStatus @default(ACTIVE)
+  subscriptionPlan String?
+  lastLoginAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Note: User relation is handled in customer database
+  // This is just a reference to the user ID
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([lastLoginAt])
+  @@map("clients")
+}
+
+model OAuthIntegration {
+  id             String     @id @default(cuid())
+  userId         String     // References user in customer database
+  platform       Platform
+  accessToken    String?    // Encrypted
+  refreshToken   String?    // Encrypted
+  tokenExpiresAt DateTime?
+  accountId      String?
+  accountName    String?
+  scopes         String[]
+  isActive       Boolean    @default(false)
+  syncStatus     SyncStatus @default(IDLE)
+  lastSyncAt     DateTime?
+  lastError      String?
+  metadata       Json?      // Encrypted additional OAuth data
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Note: User relation is handled in customer database
+  // This is just a reference to the user ID
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@index([platform])
+  @@index([isActive])
+  @@index([syncStatus])
+  @@index([tokenExpiresAt])
+  @@index([lastSyncAt])
+  @@map("oauth_integrations")
+}
+
+model Campaign {
+  id                 String          @id @default(cuid())
+  userId             String          // References user in customer database
+  platform           Platform
+  platformCampaignId String
+  name               String
+  status             CampaignStatus?
+  objective          String?
+  budgetDaily        Decimal?
+  budgetTotal        Decimal?
+  startDate          DateTime?
+  endDate            DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  // Note: User relation is handled in customer database
+  // This is just a reference to the user ID
+  analytics AnalyticsData[]
+
+  @@unique([userId, platform, platformCampaignId])
+  @@index([userId])
+  @@index([platform])
+  @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([createdAt])
+  @@map("campaigns")
+}
+
+model AnalyticsData {
+  id              String   @id @default(cuid())
+  userId          String   // References user in customer database
+  campaignId      String?
+  platform        Platform
+  date            DateTime
+  impressions     Int?
+  clicks          Int?
+  spend           Decimal?
+  conversions     Int?
+  cpc             Decimal?
+  cpa             Decimal?
+  ctr             Decimal?
+  platformMetrics Json?    // Platform-specific metrics
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Note: User relation is handled in customer database
+  // This is just a reference to the user ID
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, platform, date, campaignId])
+  @@index([userId, platform, date])
+  @@index([userId, date])
+  @@index([platform, date])
+  @@index([campaignId])
+  @@index([date])
+  @@index([spend])
+  @@index([conversions])
+  @@map("analytics_data")
+}
+
+model Report {
+  id          String     @id @default(cuid())
+  userId      String     // References user in customer database
+  title       String
+  reportType  ReportType
+  startDate   DateTime
+  endDate     DateTime
+  data        Json
+  emailSentAt DateTime?
+  createdAt   DateTime   @default(now())
+
+  // Note: User relation is handled in customer database
+  // This is just a reference to the user ID
+
+  @@index([userId])
+  @@index([reportType])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+// Enums
+// Note: Role enum is now in customer-schema.prisma
+
+enum ClientStatus {
+  ACTIVE
+  TRIAL
+  INACTIVE
+}
+
+enum Platform {
+  GOOGLE_ADS
+  META_ADS
+  LINKEDIN_ADS
+  GOOGLE_ANALYTICS
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  ERROR
+  PENDING_AUTH
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+  DRAFT
+}
+
+enum ReportType {
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
